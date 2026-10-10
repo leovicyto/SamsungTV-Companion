@@ -1,6 +1,7 @@
 # SamsungTV-Companion
 
-**Turn your Samsung TV on and off together with your Windows PC.**
+**Turn your Samsung Smart TV on and off together with your Windows PC.** For anyone using a Samsung
+TV (QLED, Neo QLED, The Frame, Crystal UHD… any Tizen model) as a PC monitor or for couch gaming.
 
 [Português (Brasil)](README.pt-BR.md)
 
@@ -145,6 +146,30 @@ administrator. It removes the scheduled tasks, the wake-on-input helper, its own
 - The pairing token is stored in `config.json` in that folder.
 - The TV uses a self-signed certificate on port 8002, so the certificate is not validated
   (only for the connection to the TV).
+
+## FAQ
+
+**Why doesn't my Samsung TV turn on or off with my PC?**
+TVs follow their sources through HDMI-CEC (Anynet+ on Samsung), but PC graphics cards (NVIDIA,
+AMD, Intel) don't implement CEC. So the TV never learns that the PC shut down or woke up.
+SamsungTV-Companion uses the network instead.
+
+**Do I need a USB-CEC adapter, a Raspberry Pi, Home Assistant or SmartThings?**
+No. It talks directly to the TV over your local network: no extra hardware, no cloud and no
+Samsung account.
+
+**Which Samsung TVs are supported?**
+Smart TVs running Tizen (2016 and newer) that have *Power On with Mobile*. It has been tested on a
+QN55Q70T (2020). Other models should work. Please [tell us](../../issues) either way.
+
+**Is this LGTV Companion for Samsung?**
+That is the idea: same goal, for Samsung TVs. It is a separate project with no shared code.
+
+**Will the TV turn off when I restart Windows (for example after an update)?**
+No, by default it stays on during restarts and only turns off when you shut down.
+
+**Can I control the TV from a script, a hotkey or a Stream Deck?**
+Yes, see [Manual control](#manual-control).
 
 ## Credits
 

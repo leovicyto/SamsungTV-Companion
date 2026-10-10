@@ -1,6 +1,7 @@
 # SamsungTV-Companion
 
-**Sua TV Samsung liga e desliga junto com o PC.**
+**Sua Smart TV Samsung liga e desliga junto com o PC (Windows).** Para quem usa uma TV Samsung (QLED,
+Neo QLED, The Frame, Crystal UHD… qualquer modelo com Tizen) como monitor do computador ou para jogar no sofá.
 
 [English](README.md)
 
@@ -145,6 +146,29 @@ de desligamento (outros scripts de desligamento não são tocados) e os arquivos
 - O token de pareamento fica no `config.json` dessa pasta.
 - A TV usa um certificado autoassinado na porta 8002, então o certificado não é validado
   (só na conexão com a TV).
+
+## Perguntas frequentes
+
+**Por que minha TV Samsung não liga e desliga junto com o PC?**
+As TVs acompanham os aparelhos pelo HDMI-CEC (Anynet+ na Samsung), mas placas de vídeo de PC (NVIDIA,
+AMD, Intel) não têm CEC. Então a TV nunca fica sabendo que o PC desligou ou ligou. O SamsungTV-Companion
+usa a rede no lugar disso.
+
+**Preciso de adaptador USB-CEC, Raspberry Pi, Home Assistant ou SmartThings?**
+Não. Ele conversa direto com a TV pela sua rede local: sem hardware extra, sem nuvem e sem conta Samsung.
+
+**Quais TVs Samsung funcionam?**
+Smart TVs com Tizen (2016 em diante) que tenham *Ligar com dispositivo móvel*. Testado numa QN55Q70T
+(2020). Outros modelos devem funcionar. [Conte pra gente](../../issues) se funcionou ou não.
+
+**É o LGTV Companion para Samsung?**
+A ideia é essa: mesmo objetivo, para TVs Samsung. É um projeto separado, sem código em comum.
+
+**A TV desliga quando o Windows reinicia (por exemplo, depois de uma atualização)?**
+Não. Por padrão ela continua ligada no reinício e só desliga quando você desliga o PC.
+
+**Dá pra controlar a TV por script, atalho de teclado ou Stream Deck?**
+Sim, veja [Controle manual](#controle-manual).
 
 ## Créditos
 
