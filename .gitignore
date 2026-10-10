@@ -1,0 +1,3 @@
+# local config and logs (contain the TV pairing token)
+config.json
+*.log
