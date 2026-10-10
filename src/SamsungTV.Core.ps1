@@ -32,7 +32,10 @@ function Get-TvConfig([string]$Path) {
     foreach ($k in 'name', 'ip', 'mac', 'token') {
         if (-not ($c.PSObject.Properties.Name -contains $k)) { $c | Add-Member -NotePropertyName $k -NotePropertyValue '' }
     }
-    if (-not ($c.PSObject.Properties.Name -contains 'keepOnRestart')) { $c | Add-Member -NotePropertyName keepOnRestart -NotePropertyValue $true }
+    $defaults = @{ keepOnRestart = $true; wakeOnInput = $false; wakeOnInputGraceSeconds = 15 }
+    foreach ($k in $defaults.Keys) {
+        if (-not ($c.PSObject.Properties.Name -contains $k)) { $c | Add-Member -NotePropertyName $k -NotePropertyValue $defaults[$k] }
+    }
     $c | Add-Member -NotePropertyName _path -NotePropertyValue $Path -Force
     $c
 }
@@ -44,6 +47,8 @@ function Save-TvConfig($Config) {
         mac           = $Config.mac
         token         = $Config.token
         keepOnRestart = [bool]$Config.keepOnRestart
+        wakeOnInput   = [bool]$Config.wakeOnInput
+        wakeOnInputGraceSeconds = [int]$Config.wakeOnInputGraceSeconds
     }
     $out | ConvertTo-Json | Set-Content -LiteralPath $Config._path -Encoding ASCII
 }
@@ -263,9 +268,18 @@ function Invoke-TvPair($Config, [int]$TimeoutSec = 90) {
 function Invoke-TvOff($Config) {
     $ip = Resolve-TvAddress $Config
     if ((Get-TvPowerState $ip) -ne 'on') { Write-TvLog 'TV already off'; return $true }
-    Send-TvKey $Config $ip 'KEY_POWER'
-    Write-TvLog 'power-off sent'
-    $true
+    # Over Wi-Fi a key press is occasionally lost, so confirm and retry once. Wait long enough
+    # first: KEY_POWER toggles, and a second press on a TV that is already going off turns it on.
+    for ($try = 1; $try -le 2; $try++) {
+        Send-TvKey $Config $ip 'KEY_POWER'
+        for ($s = 0; $s -lt 6; $s++) {
+            Start-Sleep -Seconds 1
+            if ((Get-TvPowerState $ip) -ne 'on') { Write-TvLog 'TV off'; return $true }
+        }
+        if ($try -eq 1) { Write-TvLog 'TV still on after 6 s, sending power-off again' }
+    }
+    Write-TvLog 'TV did not turn off'
+    $false
 }
 
 function Invoke-TvOn($Config, [int]$TimeoutSec = 60) {

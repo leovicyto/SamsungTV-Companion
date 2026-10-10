@@ -18,7 +18,8 @@ if (-not (Test-IsAdmin)) {
 }
 
 Unregister-PowerOnTask
-Write-Host (T '   OK  scheduled task removed' '   OK  tarefa agendada removida') -ForegroundColor Green
+Unregister-WatcherTask
+Write-Host (T '   OK  scheduled tasks removed' '   OK  tarefas agendadas removidas') -ForegroundColor Green
 
 Set-ShutdownHook -Remove
 Write-Host (T '   OK  shutdown script removed' '   OK  script de desligamento removido') -ForegroundColor Green

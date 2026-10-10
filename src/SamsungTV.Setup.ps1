@@ -158,6 +158,67 @@ function Unregister-PowerOnTask {
     }
 }
 
+# ---------------------------------------------------------------------------- wake-on-input watcher
+
+$script:WatcherTaskName = 'SamsungTV-Companion - Wake on input'
+$script:WatcherExe = Join-Path $script:InstallDir 'SamsungTVWatcher.exe'
+
+function Stop-Watcher {
+    Get-Process -Name SamsungTVWatcher -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 500
+}
+
+function Build-Watcher([string]$SourcePath) {
+    # Compiled here from source with the C# compiler that ships with Windows (.NET Framework 4.x),
+    # so the repository carries no binaries.
+    $csc = @("$env:windir\Microsoft.NET\Framework64\v4.0.30319\csc.exe", "$env:windir\Microsoft.NET\Framework\v4.0.30319\csc.exe") |
+           Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if (-not $csc) { throw 'C# compiler not found (.NET Framework 4.x is missing)' }
+    Stop-Watcher
+    $out = & $csc /nologo /target:winexe /optimize+ "/out:$script:WatcherExe" $SourcePath 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "watcher build failed: $out" }
+}
+
+function Register-WatcherTask {
+    # Runs in each user's session at logon, with normal (non-admin) rights.
+    $xml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Author>SamsungTV-Companion</Author>
+    <Description>Turns the Samsung TV back on when the mouse or keyboard is used while the TV is off.</Description>
+  </RegistrationInfo>
+  <Triggers><LogonTrigger><Enabled>true</Enabled></LogonTrigger></Triggers>
+  <Principals><Principal id="Author"><GroupId>S-1-5-32-545</GroupId><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>Parallel</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>$($script:WatcherExe)</Command></Exec></Actions>
+</Task>
+"@
+    Register-ScheduledTask -TaskName $script:WatcherTaskName -Xml $xml -Force | Out-Null
+}
+
+function Start-WatcherNow {
+    # Start it for the current user without waiting for the next logon. explorer.exe launches it
+    # with the user's normal rights even though the installer itself is elevated.
+    if (Get-Process -Name SamsungTVWatcher -ErrorAction SilentlyContinue) { return $true }
+    Start-Process -FilePath explorer.exe -ArgumentList "`"$script:WatcherExe`""
+    Start-Sleep -Seconds 2
+    [bool](Get-Process -Name SamsungTVWatcher -ErrorAction SilentlyContinue)
+}
+
+function Unregister-WatcherTask {
+    Stop-Watcher
+    if (Get-ScheduledTask -TaskName $script:WatcherTaskName -ErrorAction SilentlyContinue) {
+        Unregister-ScheduledTask -TaskName $script:WatcherTaskName -Confirm:$false
+    }
+}
+
 # ---------------------------------------------------------------------------- files
 
 function Protect-InstallDir {

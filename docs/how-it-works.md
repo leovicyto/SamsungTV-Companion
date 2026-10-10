@@ -1,13 +1,13 @@
 # How it works
 
 Notes for anyone who wants to understand, port or extend SamsungTV-Companion. Most of this was found
-the hard way on a QN55Q70T (2020, Tizen 5.5) connected over Wi-Fi.
+the hard way on a QN55Q70T (2020, Tizen 5.5), first over Wi-Fi and then over a cable.
 
 ## The TV's network interfaces
 
 | Port | What | Used for |
 |---|---|---|
-| `8001` HTTP | `GET /api/v2/` returns device info as JSON | discovery, `device.PowerState` (`on` / `standby`), Wi-Fi MAC, model |
+| `8001` HTTP | `GET /api/v2/` returns device info as JSON | discovery, `device.PowerState` (`on` / `standby`), MAC (`wifiMac`), model |
 | `8001` WS | `ws://…/api/v2/channels/samsung.remote.control` | **rejected** on 2018+ models (`ms.channel.unauthorized`) |
 | `8002` WSS | `wss://…/api/v2/channels/samsung.remote.control?name=<base64>&token=<token>` | remote keys (`KEY_POWER`). Self-signed certificate |
 
@@ -50,8 +50,31 @@ What works is **Wake-on-LAN**: the standard magic packet (6×`FF` + 16× MAC) to
 A single packet right after the TV entered standby was not enough in testing. Repeating it turned the
 TV on in about 9 s.
 
-Use the MAC of the interface the TV is actually using. `device.wifiMac` from the API may be the Wi-Fi MAC
-even when the TV is on a cable (untested), so the installer reads the MAC from the ARP table first.
+Use the MAC of the interface the TV is actually using. Despite its name, `device.wifiMac` reported the
+**wired** MAC when the TV was on a cable. The installer reads the MAC from the ARP table first anyway.
+Wi-Fi and cable have different MACs, so moving the TV between them needs a re-install.
+
+## What the TV does after power-off
+
+Measured over a cable, polling every 2 s:
+
+| Time after `KEY_POWER` | `GET :8001/api/v2/` | ping |
+|---|---|---|
+| 0–3 s | TV closes the WebSocket itself | yes |
+| ~3–20 s | `"PowerState": "standby"` | yes |
+| ~20 s on | no answer at all | no |
+| Wake-on-LAN sent at 45 s | `"PowerState": "on"` 2 s later | yes |
+
+So "off" means the TV disappears from the network completely, but its NIC still listens for the magic
+packet. Over Wi-Fi the TV also reconnected later in a `standby` state.
+
+## Wi-Fi vs cable
+
+Over Wi-Fi each direction failed once in a handful of tests: one power-off key was accepted but ignored,
+and one 90-second wake attempt got no reaction, while an identical attempt a few minutes earlier woke the
+TV in 9 s. Over a cable every test worked and wake-up took ~2 s. That is why `Invoke-TvOff` confirms the
+state and retries once. It waits 6 s before retrying, because `KEY_POWER` toggles: a second press while the
+TV is already shutting down would turn it back on.
 
 ## Pitfall 3: running something at shutdown, reliably
 
@@ -82,6 +105,25 @@ Inside the shutdown script there is no API that says "this is a restart". But Wi
 so on. It is localized, so `Test-RestartInProgress` matches the restart word in the common languages.
 Anything unknown is treated as a shutdown, so in the worst case the TV turns off, which is the
 behaviour you would have had anyway.
+
+## Wake on input (optional helper)
+
+Windows has no "mouse moved" trigger for scheduled tasks, so this part needs something running.
+`src/Watcher/SamsungTVWatcher.cs` is a ~200-line C# program compiled at install time by the
+`csc.exe` that ships with .NET Framework 4.x (so it is C# 5). It runs in the user's session, started by a
+logon task for the Users group, and:
+
+- polls the TV state every 10 s (plain HTTP/1.0 over a socket);
+- reads `GetLastInputInfo` every 0.5 s;
+- if there was new input and the TV has been off for at least `wakeOnInputGraceSeconds` (15 s), sends
+  Wake-on-LAN every 2 s until the TV reports `on` (max 60 s, then pauses 5 min).
+
+The grace period is there so that switching the TV off with the remote while your hand is still on the
+mouse does not turn it straight back on.
+
+Memory: a first version using `HttpWebRequest` had a 23 MB working set. Replacing it with a raw socket and
+calling `SetProcessWorkingSetSize(-1, -1)` after each check brought the working set to about 2 MB
+(private commit stays around 17 MB, mostly untouched and pageable). CPU time is about 0.05 s per minute.
 
 ## Finding the TV again
 

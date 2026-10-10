@@ -6,6 +6,9 @@
     IP of the TV (skips network discovery).
 .PARAMETER OnRestart
     Keep (default) leaves the TV on when Windows restarts; TurnOff turns it off on restarts too.
+.PARAMETER WakeOnInput
+    Yes installs a small helper that turns the TV back on when the mouse or keyboard is used
+    while the TV is off (e.g. after switching it off with the remote).
 .PARAMETER SkipPowerTest
     Do not turn the TV off/on during installation.
 #>
@@ -13,6 +16,7 @@
 param(
     [string]$TvAddress,
     [ValidateSet('Keep', 'TurnOff', '')][string]$OnRestart = '',
+    [ValidateSet('Yes', 'No', '')][string]$WakeOnInput = '',
     [switch]$SkipPowerTest
 )
 
@@ -76,7 +80,7 @@ if ($tvs.Count -gt 1) {
     $tv = $tvs[[int]$n - 1]
 }
 if (-not $tv.Mac) { Fail (T 'Could not read the TV MAC address (needed for Wake-on-LAN).' 'Nao consegui ler o endereco MAC da TV (necessario para o Wake-on-LAN).') }
-if ($tv.Network -eq 'wireless') { Warn (T 'TV is on Wi-Fi: power on works, but a network cable is more reliable.' 'A TV esta no Wi-Fi: ligar funciona, mas cabo de rede e mais confiavel.') }
+if ($tv.Network -eq 'wireless') { Warn (T 'TV is on Wi-Fi: it works, but commands are occasionally lost. A network cable is strongly recommended.' 'A TV esta no Wi-Fi: funciona, mas as vezes um comando se perde. Cabo de rede e bem mais confiavel.') }
 Ok "$($tv.Name) - $($tv.Ip)"
 
 # --------------------------------------------------------------------------- 3. files + config
@@ -90,8 +94,10 @@ $cfg = [pscustomobject]@{
     name          = "SamsungTV-Companion ($env:COMPUTERNAME)"
     ip            = $tv.Ip
     mac           = $tv.Mac
-    token         = $(if ($old -and $old.mac -eq $tv.Mac) { $old.token } else { '' })
+    token         = $(if ($old) { $old.token } else { '' })   # the token belongs to the PC name, not to the TV address
     keepOnRestart = $true
+    wakeOnInput   = $false
+    wakeOnInputGraceSeconds = $(if ($old) { $old.wakeOnInputGraceSeconds } else { 15 })
     _path         = $cfgPath
 }
 Save-TvConfig $cfg
@@ -126,6 +132,11 @@ if (-not $OnRestart) {
     $keep = Ask (T 'Keep the TV ON when Windows RESTARTS (only turn off on shutdown)?' 'Manter a TV LIGADA quando o Windows REINICIAR (so desligar no desligamento)?')
 } else { $keep = $OnRestart -eq 'Keep' }
 $cfg.keepOnRestart = $keep
+
+if (-not $WakeOnInput) {
+    $wake = Ask (T 'Turn the TV back on when you touch the mouse or keyboard after switching it off with the remote? (small helper, ~2 MB RAM)' 'Religar a TV quando voce mexer no mouse ou teclado depois de desligar ela pelo controle? (programinha leve, ~2 MB de RAM)')
+} else { $wake = $WakeOnInput -eq 'Yes' }
+$cfg.wakeOnInput = $wake
 Save-TvConfig $cfg
 
 # --------------------------------------------------------------------------- 7. hooks
@@ -135,6 +146,20 @@ if (Test-ShutdownHook) { Ok (T 'shutdown script registered (turns the TV off)' '
 else { Warn (T 'shutdown script not visible in the registry yet - it may apply after a reboot' 'script de desligamento ainda nao aparece no registro - pode valer depois de reiniciar') }
 Register-PowerOnTask
 Ok ((T 'scheduled task "{0}" (turns the TV on at boot, logon and resume)' 'tarefa agendada "{0}" (liga a TV ao iniciar, no login e ao voltar da suspensao)') -f $script:TaskName)
+
+if ($cfg.wakeOnInput) {
+    try {
+        Build-Watcher (Join-Path $PSScriptRoot 'Watcher\SamsungTVWatcher.cs')
+        Register-WatcherTask
+        if (Start-WatcherNow) { Ok (T 'wake-on-input helper running (starts with every logon)' 'religar pelo mouse/teclado ativo (inicia junto com o login)') }
+        else { Ok (T 'wake-on-input helper installed (starts at next logon)' 'religar pelo mouse/teclado instalado (inicia no proximo login)') }
+    } catch {
+        Warn ((T 'wake-on-input helper not installed: ' 'religar pelo mouse/teclado nao instalado: ') + $_.Exception.Message)
+    }
+} else {
+    Unregister-WatcherTask
+    Remove-Item -LiteralPath $script:WatcherExe -Force -ErrorAction SilentlyContinue
+}
 
 Write-Host ''
 Write-Host (T '  Done. Files and log: ' '  Pronto. Arquivos e log: ') -NoNewline; Write-Host $script:InstallDir -ForegroundColor White
