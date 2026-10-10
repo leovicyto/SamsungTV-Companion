@@ -17,6 +17,8 @@ binaries in this repository.
 - **PC shuts down** → TV turns off
 - **PC restarts** → TV stays on (configurable)
 - **TV switched off with the remote, you touch the mouse or keyboard** → TV turns back on (optional)
+- **TV turns itself back on ~30 s after you switch it off with the remote** → switched off again, for good
+  (optional, see the [FAQ](#faq))
 - **Router gives the TV a new IP** → it is found again by its MAC address
 - **Lightweight**: the on/off hooks run only at those moments; the optional wake-on-input helper
   uses about 2 MB of RAM
@@ -62,12 +64,13 @@ The installer:
 4. asks whether the TV should stay on when Windows restarts;
 5. asks whether the TV should turn back on when you touch the mouse or keyboard after switching it off
    with the remote;
-6. installs the hooks (see [How it works](#how-it-works)).
+6. asks whether the TV should be switched off again when it turns itself back on after the remote;
+7. installs the hooks (see [How it works](#how-it-works)).
 
 If the TV changes from Wi-Fi to cable (or the other way round), run the installer again: the TV gets a
 new MAC address.
 
-Installer options (run from an elevated PowerShell): `src\Install.ps1 -TvAddress 192.168.1.50 -OnRestart Keep -WakeOnInput Yes -SkipPowerTest`
+Installer options (run from an elevated PowerShell): `src\Install.ps1 -TvAddress 192.168.1.50 -OnRestart Keep -WakeOnInput Yes -KeepOff Yes -SkipPowerTest`
 
 ## Manual control
 
@@ -92,6 +95,7 @@ Everything is logged to `C:\ProgramData\SamsungTV-Companion\SamsungTV.log`.
 | Shutdown | A **local group policy shutdown script**. Windows runs it while the network is still up and waits for it to finish. It sends `KEY_POWER` through the TV remote API (`wss://<tv>:8002`), only if the TV is on |
 | Restart | The same shutdown script reads the shutdown type that Windows logs (event 1074) and leaves the TV on |
 | Mouse/keyboard while the TV is off (optional) | `SamsungTVWatcher.exe` runs in your session (task `SamsungTV-Companion - Wake on input`). It checks the TV every 10 s and, if the TV has been off for at least 15 s and there is new input, sends Wake-on-LAN. Uses about 2 MB of RAM and practically no CPU |
+| TV turns itself back on after the remote (optional) | The same background component checks every 2 s for 90 s after the TV goes off. If the TV comes back on and nobody touched the PC, it sends `KEY_POWER` over the network. Switched off that way, the TV stays off |
 
 Technical details, including why the obvious approaches fail, are in [docs/how-it-works.md](docs/how-it-works.md).
 
@@ -115,9 +119,15 @@ Check `C:\ProgramData\SamsungTV-Companion\SamsungTV.log` first.
 - Windows Home has not been tested yet.
 
 **The TV turns back on by itself right after I switch it off with the remote**
-- That is the wake-on-input helper seeing the mouse or keyboard. It waits 15 s after the TV goes off;
-  raise `wakeOnInputGraceSeconds` in `config.json`, or reinstall with `-WakeOnInput No`.
-- Its log is in `%LOCALAPPDATA%\SamsungTV-Companion\watcher.log`.
+- About 30 s later, with nobody touching the PC: that is the HDMI wake-up described in the
+  [FAQ](#faq). Install with *keep off* enabled (`-KeepOff Yes`).
+- Right when you touch the mouse or keyboard: that is the wake-on-input helper. It waits 15 s after the
+  TV goes off; raise `wakeOnInputGraceSeconds` in `config.json`, or reinstall with `-WakeOnInput No`.
+- The helper's log is in `%LOCALAPPDATA%\SamsungTV-Companion\watcher.log`.
+
+**I turned the TV on with the remote and it switched off again**
+- With *keep off* enabled, turning the TV on with the remote within 90 s of switching it off, without
+  touching the PC, looks exactly like the TV waking up by itself. Touch the mouse instead, or wait longer.
 
 **The TV turns off when I restart**
 - The restart type is read from Windows' event log in several languages. If yours is not recognised,
@@ -164,6 +174,14 @@ QN55Q70T (2020). Other models should work. Please [tell us](../../issues) either
 
 **Is this LGTV Companion for Samsung?**
 That is the idea: same goal, for Samsung TVs. It is a separate project with no shared code.
+
+**My Samsung TV turns itself back on ~30 seconds after I switch it off with the remote. Why?**
+Switched off with the remote, the TV drops the HDMI hot-plug signal after 20–35 s. Windows then
+removes the display and the graphics driver reconfigures the output, and that activity on the cable
+wakes the TV up again. Turning off *HDMI-CEC / Anynet+* does not help. Switched off over the network,
+the TV does not drop the hot-plug signal and stays off. With *keep off* enabled, SamsungTV-Companion
+catches the self-wake and switches the TV off over the network. In our tests this happened in 2 of 3
+remote power-offs, so it does not happen every time.
 
 **Will the TV turn off when I restart Windows (for example after an update)?**
 No, by default it stays on during restarts and only turns off when you shut down.

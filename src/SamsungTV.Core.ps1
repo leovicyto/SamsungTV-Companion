@@ -32,7 +32,7 @@ function Get-TvConfig([string]$Path) {
     foreach ($k in 'name', 'ip', 'mac', 'token') {
         if (-not ($c.PSObject.Properties.Name -contains $k)) { $c | Add-Member -NotePropertyName $k -NotePropertyValue '' }
     }
-    $defaults = @{ keepOnRestart = $true; wakeOnInput = $false; wakeOnInputGraceSeconds = 15 }
+    $defaults = @{ keepOnRestart = $true; wakeOnInput = $false; wakeOnInputGraceSeconds = 15; keepOffAfterRemote = $false }
     foreach ($k in $defaults.Keys) {
         if (-not ($c.PSObject.Properties.Name -contains $k)) { $c | Add-Member -NotePropertyName $k -NotePropertyValue $defaults[$k] }
     }
@@ -49,6 +49,7 @@ function Save-TvConfig($Config) {
         keepOnRestart = [bool]$Config.keepOnRestart
         wakeOnInput   = [bool]$Config.wakeOnInput
         wakeOnInputGraceSeconds = [int]$Config.wakeOnInputGraceSeconds
+        keepOffAfterRemote = [bool]$Config.keepOffAfterRemote
     }
     $out | ConvertTo-Json | Set-Content -LiteralPath $Config._path -Encoding ASCII
 }
@@ -252,8 +253,11 @@ function Send-TvKey($Config, [string]$Ip, [string]$Key) {
     try {
         $cmd = @{ method = 'ms.remote.control'; params = @{ Cmd = 'Click'; DataOfCmd = $Key; Option = 'false'; TypeOfRemote = 'SendRemoteKey' } } |
                ConvertTo-Json -Compress
+        # A key sent right after "connect" is sometimes ignored; give the TV a moment,
+        # and keep the connection open a little after sending.
+        Start-Sleep -Milliseconds 1000
         Send-WsFrame $cx.Stream ([Text.Encoding]::UTF8.GetBytes($cmd))
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Milliseconds 1500
     } finally { Disconnect-TvRemote $cx }
 }
 
@@ -282,8 +286,15 @@ function Invoke-TvOff($Config) {
     $false
 }
 
+function Set-WakeMarker($Config) {
+    # Tells the watcher "this wake-up was on purpose", so it does not take it for the TV turning
+    # itself back on (keep-off mode). The watcher reads the file's timestamp.
+    try { Set-Content -LiteralPath (Join-Path (Split-Path -Parent $Config._path) 'last-wake.txt') -Value (Get-Date -Format o) } catch {}
+}
+
 function Invoke-TvOn($Config, [int]$TimeoutSec = 60) {
     if ((Get-TvPowerState $Config.ip) -eq 'on') { Write-TvLog 'TV already on'; return $true }
+    Set-WakeMarker $Config
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $i = 0
     while ((Get-Date) -lt $deadline) {

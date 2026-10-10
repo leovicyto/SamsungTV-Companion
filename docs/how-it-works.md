@@ -106,6 +106,35 @@ so on. It is localized, so `Test-RestartInProgress` matches the restart word in 
 Anything unknown is treated as a shutdown, so in the worst case the TV turns off, which is the
 behaviour you would have had anyway.
 
+## The TV turns itself back on after the remote
+
+Recording TV state and the Windows display device once per second while the TV was switched off:
+
+| | Switched off with the **remote** | Switched off over the **network** (`KEY_POWER`) |
+|---|---|---|
+| 0–20 s | `standby`, then offline | `standby`, then offline |
+| 22–35 s | Windows logs Kernel-PnP **1010**: `DISPLAY\SAM7003` removed, "absent from the bus" | display stays present |
+| < 1 s later | **TV is on again** | TV stays off (90 s recorded, then woken on purpose) |
+
+So, switched off with the remote, the TV drops the HDMI hot-plug line; Windows and the graphics driver
+(AMD here) react to the display disappearing, and that activity wakes the TV. Disabling *Anynet+
+(HDMI-CEC)* made no difference, and nothing else was connected to the TV. It happened in 2 of 3
+remote power-offs. In the third, Windows never removed the display and the TV stayed off.
+
+The helper's *keep off* mode polls every 2 s for 90 s after the TV goes off. If the TV comes back on and
+`GetLastInputInfo` has not changed since it went off (nobody touched the PC), it sends `KEY_POWER` over
+the network. That puts the TV in the standby that does not drop the hot-plug line.
+
+Wake-ups done on purpose by SamsungTV-Companion (boot, logon, resume, the installer's power test) touch
+`last-wake.txt` next to `config.json`, and the helper ignores a wake-up within 2 minutes of that file being
+updated. Without that, resuming from sleep would look like the TV waking up by itself (found the hard way:
+the installer's power test got switched off by a running helper). The remaining trade-off: turning the TV
+on with the remote within that window, without touching the PC, looks the same, so it gets switched off.
+
+A key sent immediately after `ms.channel.connect` was sometimes ignored: one network power-off took
+17 s because the first press was lost and was retried. Waiting 1 s before sending, and keeping the
+connection open 1.5 s afterwards, brought it to 5 s.
+
 ## Wake on input (optional helper)
 
 Windows has no "mouse moved" trigger for scheduled tasks, so this part needs something running.

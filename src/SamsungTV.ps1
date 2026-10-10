@@ -48,7 +48,7 @@ try {
             $cfg = Get-TvConfig $ConfigPath
             $ip = Resolve-TvAddress $cfg
             $state = if ($ip) { Get-TvPowerState $ip } else { 'unreachable (off)' }
-            Write-TvLog ('ip={0} mac={1} state={2} paired={3} keepOnRestart={4} wakeOnInput={5}' -f $cfg.ip, $cfg.mac, $state, [bool]$cfg.token, $cfg.keepOnRestart, $cfg.wakeOnInput)
+            Write-TvLog ('ip={0} mac={1} state={2} paired={3} keepOnRestart={4} wakeOnInput={5} keepOffAfterRemote={6}' -f $cfg.ip, $cfg.mac, $state, [bool]$cfg.token, $cfg.keepOnRestart, $cfg.wakeOnInput, $cfg.keepOffAfterRemote)
         }
         'Pair' {
             $cfg = Get-TvConfig $ConfigPath

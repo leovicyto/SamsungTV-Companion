@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.0 - 2026-10-10
+
+- **Keep off**: the tested Samsung TV turned itself back on ~30 s after being switched off with the remote,
+  when Windows removes the display (HDMI hot-plug). The helper now catches that and switches the TV off
+  over the network, which keeps it off. Optional (`-KeepOff`). Wake-ups done by SamsungTV-Companion itself
+  (boot, resume, installer test) are marked so they are not mistaken for a self-wake.
+- The installer stops a running helper before its power test.
+- Watcher log records TV state changes and how long each wake-up took.
+- `SamsungTVWatcher.exe --off` switches the TV off and exits.
+- Key presses wait 1 s after connecting and keep the connection open a little longer (the first press
+  was occasionally ignored).
+
 ## 1.0.0 - 2026-10-09
 
 First release.

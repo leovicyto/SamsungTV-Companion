@@ -7,8 +7,11 @@
 .PARAMETER OnRestart
     Keep (default) leaves the TV on when Windows restarts; TurnOff turns it off on restarts too.
 .PARAMETER WakeOnInput
-    Yes installs a small helper that turns the TV back on when the mouse or keyboard is used
+    Yes installs a background component (SamsungTVWatcher) that turns the TV back on when the mouse or keyboard is used
     while the TV is off (e.g. after switching it off with the remote).
+.PARAMETER KeepOff
+    Yes lets the same component switch the TV off again over the network when it turns itself back on
+    shortly after being switched off with the remote (HDMI hot-plug wake-up).
 .PARAMETER SkipPowerTest
     Do not turn the TV off/on during installation.
 #>
@@ -17,6 +20,7 @@ param(
     [string]$TvAddress,
     [ValidateSet('Keep', 'TurnOff', '')][string]$OnRestart = '',
     [ValidateSet('Yes', 'No', '')][string]$WakeOnInput = '',
+    [ValidateSet('Yes', 'No', '')][string]$KeepOff = '',
     [switch]$SkipPowerTest
 )
 
@@ -85,6 +89,7 @@ Ok "$($tv.Name) - $($tv.Ip)"
 
 # --------------------------------------------------------------------------- 3. files + config
 New-Item -ItemType Directory -Path $script:InstallDir -Force | Out-Null
+Stop-Watcher   # a running helper would react to the power test below
 foreach ($f in 'SamsungTV.ps1', 'SamsungTV.Core.ps1', 'SamsungTV.Setup.ps1', 'Uninstall.ps1') {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $f) -Destination $script:InstallDir -Force
 }
@@ -98,6 +103,7 @@ $cfg = [pscustomobject]@{
     keepOnRestart = $true
     wakeOnInput   = $false
     wakeOnInputGraceSeconds = $(if ($old) { $old.wakeOnInputGraceSeconds } else { 15 })
+    keepOffAfterRemote = $false
     _path         = $cfgPath
 }
 Save-TvConfig $cfg
@@ -134,9 +140,14 @@ if (-not $OnRestart) {
 $cfg.keepOnRestart = $keep
 
 if (-not $WakeOnInput) {
-    $wake = Ask (T 'Turn the TV back on when you touch the mouse or keyboard after switching it off with the remote? (small helper, ~2 MB RAM)' 'Religar a TV quando voce mexer no mouse ou teclado depois de desligar ela pelo controle? (programinha leve, ~2 MB de RAM)')
+    $wake = Ask (T 'Turn the TV on when the mouse or keyboard is used while the TV is off? (background component SamsungTVWatcher, ~2 MB RAM)' 'Ligar a TV quando o mouse ou o teclado for usado com ela desligada? (componente em segundo plano SamsungTVWatcher, ~2 MB de RAM)')
 } else { $wake = $WakeOnInput -eq 'Yes' }
 $cfg.wakeOnInput = $wake
+
+if (-not $KeepOff) {
+    $keepOffChoice = Ask (T 'After being switched off with the remote, the TV may turn itself back on ~30 s later (HDMI). If its state shows it came back on without anyone using the PC, switch it off again over the network? (same component)' 'Depois de desligada pelo controle, a TV pode religar sozinha ~30 s depois (HDMI). Se o estado dela mostrar que religou sem ninguem usar o PC, desligar de novo pela rede? (mesmo componente)')
+} else { $keepOffChoice = $KeepOff -eq 'Yes' }
+$cfg.keepOffAfterRemote = $keepOffChoice
 Save-TvConfig $cfg
 
 # --------------------------------------------------------------------------- 7. hooks
@@ -147,14 +158,14 @@ else { Warn (T 'shutdown script not visible in the registry yet - it may apply a
 Register-PowerOnTask
 Ok ((T 'scheduled task "{0}" (turns the TV on at boot, logon and resume)' 'tarefa agendada "{0}" (liga a TV ao iniciar, no login e ao voltar da suspensao)') -f $script:TaskName)
 
-if ($cfg.wakeOnInput) {
+if ($cfg.wakeOnInput -or $cfg.keepOffAfterRemote) {
     try {
         Build-Watcher (Join-Path $PSScriptRoot 'Watcher\SamsungTVWatcher.cs')
         Register-WatcherTask
-        if (Start-WatcherNow) { Ok (T 'wake-on-input helper running (starts with every logon)' 'religar pelo mouse/teclado ativo (inicia junto com o login)') }
-        else { Ok (T 'wake-on-input helper installed (starts at next logon)' 'religar pelo mouse/teclado instalado (inicia no proximo login)') }
+        if (Start-WatcherNow) { Ok (T 'background component running (starts with every logon)' 'componente em segundo plano ativo (inicia junto com o login)') }
+        else { Ok (T 'background component installed (starts at next logon)' 'componente em segundo plano instalado (inicia no proximo login)') }
     } catch {
-        Warn ((T 'wake-on-input helper not installed: ' 'religar pelo mouse/teclado nao instalado: ') + $_.Exception.Message)
+        Warn ((T 'background component not installed: ' 'componente em segundo plano nao instalado: ') + $_.Exception.Message)
     }
 } else {
     Unregister-WatcherTask

@@ -17,6 +17,8 @@ sem executáveis prontos no repositório.
 - **PC desliga** → TV desliga
 - **PC reinicia** → TV continua ligada (configurável)
 - **TV desligada pelo controle, você mexe no mouse ou teclado** → TV liga de novo (opcional)
+- **TV religa sozinha ~30 s depois de desligada pelo controle** → é desligada de novo, de vez
+  (opcional, veja as [perguntas frequentes](#perguntas-frequentes))
 - **Roteador muda o IP da TV** → ela é reencontrada pelo endereço MAC
 - **Leve**: ligar e desligar só rodam nesses momentos; o religar pelo mouse/teclado (opcional) usa
   cerca de 2 MB de RAM
@@ -62,12 +64,13 @@ O instalador:
 4. pergunta se a TV deve continuar ligada quando o Windows reiniciar;
 5. pergunta se a TV deve ligar de novo quando você mexer no mouse ou teclado depois de desligá-la pelo
    controle;
-6. instala os gatilhos (veja [Como funciona](#como-funciona)).
+6. pergunta se a TV deve ser desligada de novo quando religar sozinha depois do controle;
+7. instala os gatilhos (veja [Como funciona](#como-funciona)).
 
 Se a TV mudar do Wi-Fi para o cabo (ou o contrário), rode o instalador de novo: a TV ganha outro
 endereço MAC.
 
-Opções do instalador (num PowerShell como administrador): `src\Install.ps1 -TvAddress 192.168.1.50 -OnRestart Keep -WakeOnInput Yes -SkipPowerTest`
+Opções do instalador (num PowerShell como administrador): `src\Install.ps1 -TvAddress 192.168.1.50 -OnRestart Keep -WakeOnInput Yes -KeepOff Yes -SkipPowerTest`
 
 ## Controle manual
 
@@ -92,6 +95,7 @@ Tudo fica registrado em `C:\ProgramData\SamsungTV-Companion\SamsungTV.log`.
 | Desligar | Um **script de desligamento da política de grupo local**. O Windows roda ele com a rede ainda ativa e espera terminar. Ele manda `KEY_POWER` pela API de controle remoto da TV (`wss://<tv>:8002`), só se a TV estiver ligada |
 | Reiniciar | O mesmo script lê o tipo de desligamento que o Windows registra (evento 1074) e deixa a TV ligada |
 | Mouse/teclado com a TV desligada (opcional) | O `SamsungTVWatcher.exe` roda na sua sessão (tarefa `SamsungTV-Companion - Wake on input`). Consulta a TV a cada 10 s e, se ela estiver desligada há pelo menos 15 s e houver uso do mouse ou teclado, manda o Wake-on-LAN. Usa cerca de 2 MB de RAM e praticamente nada de processador |
+| TV religa sozinha depois do controle (opcional) | O mesmo componente em segundo plano consulta a TV a cada 2 s durante 90 s depois que ela desliga. Se ela voltar a ligar sem ninguém ter mexido no PC, ele manda `KEY_POWER` pela rede. Desligada assim, a TV fica desligada |
 
 Detalhes técnicos, incluindo por que os caminhos óbvios não funcionam, em [docs/how-it-works.md](docs/how-it-works.md) (em inglês).
 
@@ -115,9 +119,15 @@ Comece pelo `C:\ProgramData\SamsungTV-Companion\SamsungTV.log`.
 - O Windows Home ainda não foi testado.
 
 **A TV liga sozinha logo depois que eu desligo pelo controle**
-- É o religar pelo mouse/teclado vendo movimento. Ele espera 15 s depois que a TV apaga; aumente
-  `wakeOnInputGraceSeconds` no `config.json` ou reinstale com `-WakeOnInput No`.
-- O log dele fica em `%LOCALAPPDATA%\SamsungTV-Companion\watcher.log`.
+- Uns 30 s depois, sem ninguém mexer no PC: é o acordar pelo HDMI explicado nas
+  [perguntas frequentes](#perguntas-frequentes). Instale com *manter desligada* ativado (`-KeepOff Yes`).
+- Na hora em que você mexe no mouse ou teclado: é o religar pelo mouse/teclado. Ele espera 15 s depois que
+  a TV apaga; aumente `wakeOnInputGraceSeconds` no `config.json` ou reinstale com `-WakeOnInput No`.
+- O log do componente fica em `%LOCALAPPDATA%\SamsungTV-Companion\watcher.log`.
+
+**Liguei a TV pelo controle e ela desligou de novo**
+- Com *manter desligada* ativado, ligar a TV pelo controle até 90 s depois de desligá-la, sem mexer no PC,
+  é igual à TV religando sozinha. Mexa no mouse em vez disso, ou espere um pouco mais.
 
 **A TV desliga quando eu reinicio**
 - O tipo de reinício é lido do log do Windows em vários idiomas. Se o seu não for reconhecido,
@@ -163,6 +173,14 @@ Smart TVs com Tizen (2016 em diante) que tenham *Ligar com dispositivo móvel*. 
 
 **É o LGTV Companion para Samsung?**
 A ideia é essa: mesmo objetivo, para TVs Samsung. É um projeto separado, sem código em comum.
+
+**Minha TV Samsung liga sozinha uns 30 segundos depois que eu desligo pelo controle. Por quê?**
+Desligada pelo controle, a TV corta o sinal de presença do HDMI depois de 20–35 s. O Windows então
+remove o monitor e o driver de vídeo reconfigura a saída, e essa atividade no cabo acorda a TV de novo.
+Desativar o *HDMI-CEC / Anynet+* não resolve. Desligada pela rede, a TV não corta esse sinal e fica
+desligada. Com *manter desligada* ativado, o SamsungTV-Companion percebe quando ela religa sozinha e
+desliga de novo pela rede. Nos nossos testes isso aconteceu em 2 de 3 desligamentos pelo controle, então
+não acontece sempre.
 
 **A TV desliga quando o Windows reinicia (por exemplo, depois de uma atualização)?**
 Não. Por padrão ela continua ligada no reinício e só desliga quando você desliga o PC.
